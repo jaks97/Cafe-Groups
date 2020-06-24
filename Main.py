@@ -17,9 +17,13 @@ def user_group(user: User) -> Optional[Role]:
     return next(iter(get_groups(user.roles)), None)
 
 
-def next_group(guild: Guild):
+def next_group(guild: Guild) -> Role:
     groups = get_groups(guild.roles)
     return min(groups, key=lambda group: len(group.members))
+
+
+def is_admin(user: User) -> bool:
+    return any(role.name == "Moderator" for role in user.roles)
 
 
 @client.event
@@ -30,6 +34,12 @@ async def on_message(message: Message):
 
     if message.content.startswith('!test'):
         await message.channel.send("This is a test message")
+
+    if message.content.startswith('!purge') and is_admin(message.author):
+        for group in get_groups(message.guild.roles):
+            for member in group.members:
+                await member.remove_roles(group)
+        await message.channel.send("All the groups have been cleaned")
 
 
 @client.event
