@@ -4,11 +4,14 @@ from typing import List, Optional
 import discord
 from discord import User, Guild, Message, Role, Reaction
 
+from tabulate import tabulate
+
 TOKEN = os.getenv('TOKEN')
 
 client = discord.Client()
 
 event_msg_id: int
+
 
 def get_groups(roles: List[Role]) -> List[Role]:
     return list(filter(lambda role: role.name.startswith("Group "), roles))[::-1]
@@ -26,6 +29,12 @@ def next_group(guild: Guild) -> Role:
 def is_admin(user: User) -> bool:
     return any(role.name == "Moderator" for role in user.roles)
 
+
+def groups_state(guild: Guild) -> str:
+    groups: List[Role] = get_groups(guild.roles)
+    data = dict(list(map(lambda group: (group.name, group.members), groups)))
+    tab = tabulate(data, headers="keys", tablefmt="fancy_grid", stralign="center")
+    return tab
 
 
 @client.event
@@ -45,6 +54,9 @@ async def on_message(message: Message):
         global event_msg_id
         event_msg_id = msg.id
 
+    if message.content.startswith('!status') and is_admin(message.author):
+        msg: Message = await message.channel.send("```" + groups_state(message.guild) + "```")
+
     if message.content.startswith('!purge') and is_admin(message.author):
         for group in get_groups(message.guild.roles):
             for member in group.members:
@@ -62,7 +74,6 @@ async def on_reaction_add(reaction: Reaction, user: User):
         role = next_group(user.guild)
         await user.add_roles(role)
         await reaction.message.channel.send(user.mention + " You reacted to the test message and got added to " + role.name)
-
 
 @client.event
 async def on_ready():
