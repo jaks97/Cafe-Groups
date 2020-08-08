@@ -2,7 +2,7 @@ import os
 from typing import List, Optional
 
 import discord
-from discord import User, Guild, Message, Role, Reaction
+from discord import User, Guild, Message, Role, Reaction, RawReactionActionEvent
 
 from tabulate import tabulate
 
@@ -53,9 +53,13 @@ async def on_message(message: Message):
         await msg.add_reaction("😃")
         global event_msg_id
         event_msg_id = msg.id
+        print(event_msg_id)
+        f = open('msg', 'wb')
+        f.write(event_msg_id.to_bytes(8, 'little'))
+        f.close()
 
     if message.content.startswith('!status') and is_admin(message.author):
-        msg: Message = await message.channel.send("```" + groups_state(message.guild) + "```")
+        await message.channel.send("```" + groups_state(message.guild) + "```")
 
     if message.content.startswith('!purge') and is_admin(message.author):
         for group in get_groups(message.guild.roles):
@@ -63,17 +67,22 @@ async def on_message(message: Message):
                 await member.remove_roles(group)
         await message.channel.send("All the groups have been cleaned")
 
-
 @client.event
-async def on_reaction_add(reaction: Reaction, user: User):
+async def on_raw_reaction_add(payload: RawReactionActionEvent):
     global event_msg_id
-    if not user.bot and reaction.message.id == event_msg_id:
+    if payload.guild_id is None:
+        return  # Reaction is on a private message
+    if payload.message_id == event_msg_id:
+        guild = client.get_guild(payload.guild_id)
+        user: User = guild.get_member(payload.user_id)
+        if user.bot:
+            return
         if user_group(user) is not None:
-            await reaction.message.channel.send(user.mention + " You already are part of " + user_group(user).name)
+            await user.send(user.mention + " You already are part of " + user_group(user).name)
             return
         role = next_group(user.guild)
         await user.add_roles(role)
-        await reaction.message.channel.send(user.mention + " You reacted to the test message and got added to " + role.name)
+        await user.send(user.mention + " You got added to " + role.name)
 
 @client.event
 async def on_ready():
@@ -81,6 +90,13 @@ async def on_ready():
     print(client.user.name)
     print(client.user.id)
     print('------')
+    try:
+        f = open('msg', 'rb')
+        global event_msg_id
+        event_msg_id = int.from_bytes(f.read(), 'little')
+        f.close()
+    except FileNotFoundError:
+        pass
 
 
 client.run(TOKEN)
