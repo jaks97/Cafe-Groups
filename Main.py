@@ -1,10 +1,11 @@
 import os
-from typing import List, Optional
 
 import discord
-from discord import User, Guild, Message, Role, Reaction, RawReactionActionEvent
+from discord import User, Message, RawReactionActionEvent
 
-from tabulate import tabulate
+from sheets import *
+
+import random
 
 TOKEN = os.getenv('TOKEN')
 
@@ -13,28 +14,12 @@ client = discord.Client()
 event_msg_id: int
 
 
-def get_groups(roles: List[Role]) -> List[Role]:
-    return list(filter(lambda role: role.name.startswith("Group "), roles))[::-1]
-
-
-def user_group(user: User) -> Optional[Role]:
-    return next(iter(get_groups(user.roles)), None)
-
-
-def next_group(guild: Guild) -> Role:
-    groups = get_groups(guild.roles)
-    return min(groups, key=lambda group: len(group.members))
+def garole():
+    return next((role for role in guild.roles if role.name == "Giveaway!"), None)  # This is crap
 
 
 def is_admin(user: User) -> bool:
-    return any(role.name == "Moderator" for role in user.roles)
-
-
-def groups_state(guild: Guild) -> str:
-    groups: List[Role] = get_groups(guild.roles)
-    data = dict(list(map(lambda group: (group.name, group.members), groups)))
-    tab = tabulate(data, headers="keys", tablefmt="fancy_grid", stralign="center")
-    return tab
+    return any(role.name == "Moderator" for role in user.roles)  # TODO: Check this role
 
 
 @client.event
@@ -43,14 +28,13 @@ async def on_message(message: Message):
     if message.author == client.user:
         return
 
-    if message.content.startswith('!test'):
-        await message.channel.send("```This is a test message\n"
-                                   "Many lines?\n"
-                                   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa```")
-
     if message.content.startswith('!startevent') and is_admin(message.author):
-        msg: Message = await message.channel.send("React to this message to get added into a group")
-        await msg.add_reaction("😃")
+        msg: Message = await message.channel.send("Welcome to our 2nd giveaway! This time we do it a little "
+                                                  "different, to participate you need to react to this message. Then "
+                                                  "I will send you a link to solve a jigsaw puzzle that will reveal a "
+                                                  "password when solved. Send back the password to me via DM and look "
+                                                  "back in the discord to find a new channel at the top.")
+        await msg.add_reaction("☕")
         global event_msg_id
         event_msg_id = msg.id
         print(event_msg_id)
@@ -58,14 +42,27 @@ async def on_message(message: Message):
         f.write(event_msg_id.to_bytes(8, 'little'))
         f.close()
 
-    if message.content.startswith('!status') and is_admin(message.author):
-        await message.channel.send("```" + groups_state(message.guild) + "```")
+    if isinstance(message.channel, discord.DMChannel):
+        # Then we are on private message
+        entry = sheet.get_entry_for_user(message.author.name)
+        if entry is None:
+            await message.channel.send("Sorry, I don't understand your message")
+            return
 
-    if message.content.startswith('!purge') and is_admin(message.author):
-        for group in get_groups(message.guild.roles):
-            for member in group.members:
-                await member.remove_roles(group)
-        await message.channel.send("All the groups have been cleaned")
+        # If we are here, the player has an entry
+        if entry.status is EntryStatus.SOLVED:
+            # TODO: Check for the role
+            await message.channel.send("You already solved the puzzle")
+            return
+
+        if message.content == entry.puzzle.password:
+            sheet.update_entry_status(message.author.name, EntryStatus.SOLVED)
+            await message.channel.send("Congratulations! You solved the puzzle!")
+            await guild.get_member(message.author.id).add_roles(garole())
+            return
+
+        await message.channel.send("Sorry, the password is incorrect. Please check your message.")
+
 
 @client.event
 async def on_raw_reaction_add(payload: RawReactionActionEvent):
@@ -77,12 +74,15 @@ async def on_raw_reaction_add(payload: RawReactionActionEvent):
         user: User = guild.get_member(payload.user_id)
         if user.bot:
             return
-        if user_group(user) is not None:
-            await user.send(user.mention + " You already are part of " + user_group(user).name)
-            return
-        role = next_group(user.guild)
-        await user.add_roles(role)
-        await user.send(user.mention + " You got added to " + role.name)
+        # TODO: Check if user already has puzzle, by checking on the roles
+        entry = sheet.get_entry_for_user(user.name)
+        if entry is None:
+            puzzle = random.choice(sheet.get_puzzles())
+            sheet.add_entry(Entry(user.name, puzzle, EntryStatus.SOLVING))
+            await user.send("Here's the link to the puzzle: " + puzzle.link)
+            await user.send("When solved, a password will be revealed on that site. Reply to me with the password and "
+                            "you will be participating")
+
 
 @client.event
 async def on_ready():
@@ -90,6 +90,9 @@ async def on_ready():
     print(client.user.name)
     print(client.user.id)
     print('------')
+    global guild
+    guild = client.get_guild(int(os.getenv('GUILD')))
+    print("Guild: " + str(guild))
     try:
         f = open('msg', 'rb')
         global event_msg_id
@@ -98,5 +101,7 @@ async def on_ready():
     except FileNotFoundError:
         pass
 
+
+sheet = Sheets()
 
 client.run(TOKEN)

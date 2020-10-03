@@ -1,3 +1,5 @@
 /venv/
 .idea
 msg
+google_credentials.json
+__pycache__/
