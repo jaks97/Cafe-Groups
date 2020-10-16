@@ -13,6 +13,8 @@ client = discord.Client()
 
 event_msg_id: int
 
+intents = discord.Intents.default()
+intents.members = True
 
 def garole():
     return next((role for role in guild.roles if role.name == "Giveaway!"), None)  # This is crap
@@ -29,7 +31,7 @@ async def on_message(message: Message):
         return
 
     if message.content.startswith('!startevent') and is_admin(message.author):
-        msg: Message = await message.channel.send("Welcome to our 2nd giveaway! This time we do it a little "
+        msg: Message = await message.channel.send("Welcome to the giveaway! This time we do it a little "
                                                   "different, to participate you need to react to this message. Then "
                                                   "I will send you a link to solve a jigsaw puzzle that will reveal a "
                                                   "password when solved. Send back the password to me via DM and look "
@@ -57,8 +59,9 @@ async def on_message(message: Message):
 
         if message.content == entry.puzzle.password:
             sheet.update_entry_status(message.author.name, EntryStatus.SOLVED)
+            member = await guild.fetch_member(message.author.id)
+            await member.add_roles(garole())
             await message.channel.send("Congratulations! You solved the puzzle!")
-            await guild.get_member(message.author.id).add_roles(garole())
             return
 
         await message.channel.send("Sorry, the password is incorrect. Please check your message.")
