@@ -13,8 +13,8 @@ client = discord.Client()
 
 event_msg_id: int
 
-intents = discord.Intents.default()
-intents.members = True
+intents = discord.Intents.all()
+#intents.members = True
 
 def garole():
     return next((role for role in guild.roles if role.name == "Giveaway!"), None)  # This is crap
@@ -73,8 +73,7 @@ async def on_raw_reaction_add(payload: RawReactionActionEvent):
     if payload.guild_id is None:
         return  # Reaction is on a private message
     if payload.message_id == event_msg_id:
-        guild = client.get_guild(payload.guild_id)
-        user: User = guild.get_member(payload.user_id)
+        user: User = await guild.fetch_member(payload.user_id)
         if user.bot:
             return
         # TODO: Check if user already has puzzle, by checking on the roles
